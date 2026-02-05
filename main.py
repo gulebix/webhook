@@ -89,11 +89,14 @@ async def get_slot_doc(slotnum: str, request: Request, response: Response):
         slot = get_slot_kvstore(slotnum)
         async with slot.lock:
             slot_data = await slot.store.get()
-            next_index = (slot_data['cur_index'] + 1) % MAX_SLOT_ITEMS
-            slot_data['logs'][next_index] = new_log_entry
-            slot_data['cur_index'] = next_index
-            await slot.store.set(slot_data)
-            rval = Response(content=slot_data['content']['data'], media_type=slot_data['content']['type'])
+            try:
+                _ = new_log_entry['request']['query_params']['_ignore']
+            except:
+                next_index = (slot_data['cur_index'] + 1) % MAX_SLOT_ITEMS
+                slot_data['logs'][next_index] = new_log_entry
+                slot_data['cur_index'] = next_index
+                await slot.store.set(slot_data)
+                rval = Response(content=slot_data['content']['data'], media_type=slot_data['content']['type'])
 
     return rval
 
