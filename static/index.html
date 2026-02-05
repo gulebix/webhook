@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Log Viewer & Content Setter</title>
+  <!-- Bootstrap 5 CSS (lightweight, popular) -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        rel="stylesheet"
+        crossorigin="anonymous">
+  <style>
+    /* Make the details table inside the modal scroll vertically if needed */
+    .modal-body {
+      max-height: 70vh;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body class="bg-light">
+
+<div class="container py-5">
+
+  <h1 class="mb-4">Log Viewer</h1>
+
+  <!-- Slot ID form -->
+  <form id="logForm" class="row g-3 mb-4">
+    <div class="col-auto">
+      <label for="slotId" class="visually-hidden">Slot ID</label>
+      <input type="text" class="form-control" id="slotId" placeholder="Slot ID" required>
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-primary">Show Logs</button>
+    </div>
+    <div class="col-auto">
+      <button type="button" class="btn btn-success" id="setContentBtn">Set Content</button>
+    </div>
+  </form>
+
+  <!-- Logs table -->
+  <div class="table-responsive">
+    <table class="table table-hover" id="logsTable">
+      <thead class="table-dark">
+        <tr>
+          <th>Timestamp</th>
+          <th>Remote IP</th>
+          <th>Request</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- rows will be injected here -->
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ---------- Modal: Log Details ---------- -->
+<div class="modal fade" id="logDetailsModal" tabindex="-1" aria-labelledby="logDetailsLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="logDetailsLabel">Log Entry Details</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <table class="table table-borderless mb-0" id="detailsTable">
+          <!-- details rows will be inserted here -->
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ---------- Modal: Set Content ---------- -->
+<div class="modal fade" id="setContentModal" tabindex="-1" aria-labelledby="setContentLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="setContentForm">
+        <div class="modal-header">
+          <h5 class="modal-title" id="setContentLabel">Set Content</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+
+          <div class="mb-3">
+            <label for="secretKey" class="form-label">Secret Key</label>
+            <input type="text" class="form-control" id="secretKey" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="contentType" class="form-label">Content Type</label>
+            <input type="text" class="form-control" id="contentType" required>
+          </div>
+
+          <div class="mb-3">
+            <label for="contentBody" class="form-label">Content</label>
+            <textarea class="form-control" id="contentBody" rows="5" required></textarea>
+          </div>
+
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-success">Send</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Bootstrap 5 JS + Popper (required for modals) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        crossorigin="anonymous"></script>
+
+<script>
+  // ---------- Helper ---------- //
+  const showAlert = (msg, type = 'danger') => {
+    const alert = document.createElement('div');
+    alert.className = `alert alert-${type} alert-dismissible fade show`;
+    alert.role = 'alert';
+    alert.innerHTML = `${msg}
+      <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>`;
+    document.body.prepend(alert);
+    setTimeout(() => alert.remove(), 5000);
+  };
+
+  function htmlEncode(str) {
+    var el = document.createElement('textarea'); // Using textarea to convert HTML entities
+    el.textContent = str;
+    return el.innerHTML;
+  }
+
+  // ---------- Show Logs ---------- //
+  document.getElementById('logForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const slotId = document.getElementById('slotId').value.trim();
+    if (!slotId) return;
+
+    try {
+      // ---- Replace with your real endpoint ----
+      const resp = await fetch(`/slot_logs/${encodeURIComponent(slotId)}`);
+      if (!resp.ok) throw new Error(`Server responded ${resp.status}`);
+      const data = await resp.json(); // expecting an array of log objects
+
+      const tbody = document.querySelector('#logsTable tbody');
+      tbody.innerHTML = ''; // clear previous rows
+
+      data.logs.sort((a, b) => {
+        if(!!b.timestamp && !!a.timestamp)
+            return b.timestamp.localeCompare(a.timestamp);
+        if(!!b.timestamp)
+            return 1;
+        return -1;
+      });
+
+      data.logs.forEach((row, idx) => {
+        if(!row.request)
+            return;
+        const tr = document.createElement('tr');
+        tr.classList.add('table-row');
+        tr.style.cursor = 'pointer';
+        tr.dataset.index = idx; // store index for later lookup
+        tr.dataset.row = JSON.stringify(row); // store whole row
+
+        tr.innerHTML = `
+          <td>${row.timestamp ?? ''}</td>
+          <td>${row.request.host ?? ''}</td>
+          <td>${htmlEncode(row.request.req_line) ?? ''}</td>
+        `;
+
+        tr.addEventListener('click', () => openDetailsModal(row));
+        tbody.appendChild(tr);
+      });
+    } catch (err) {
+      console.error(err);
+      showAlert(`Failed to fetch logs: ${err.message}`);
+    }
+  });
+
+  // ---------- Log Details Modal ---------- //
+  const logDetailsModal = new bootstrap.Modal(document.getElementById('logDetailsModal'));
+
+  function openDetailsModal(row) {
+    const detailsTable = document.getElementById('detailsTable');
+    detailsTable.innerHTML = ''; // clear
+
+    const fields = [
+      {label: 'Timestamp', value: row.timestamp},
+      {label: 'Remote Client', value: `${row.request.host}:${row.request.port}`},
+      {label: 'Request', value: row.request.req_line},
+      {label: 'Headers', value: JSON.stringify(row.request.headers, null, 2)},
+      {label: 'Query String', value: JSON.stringify(row.request.query_params, null, 2)},
+      {label: 'Body', value: JSON.stringify(row.request.body_data, null, 2)}
+    ];
+
+    fields.forEach(f => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<th class="w-25">${f.label}</th><td><pre class="mb-0" style="white-space: pre-wrap;">${htmlEncode(f.value) ?? ''}</pre></td>`;
+      detailsTable.appendChild(tr);
+    });
+
+    logDetailsModal.show();
+  }
+
+  // ---------- Set Content Modal ---------- //
+  const setContentModal = new bootstrap.Modal(document.getElementById('setContentModal'));
+
+  document.getElementById('setContentBtn').addEventListener('click', () => {
+    // reset form
+    document.getElementById('setContentForm').reset();
+    setContentModal.show();
+  });
+
+  document.getElementById('setContentForm').addEventListener('submit', async e => {
+    e.preventDefault();
+
+    const slotId = document.getElementById('slotId').value.trim();
+
+    const payload = {
+      skey: document.getElementById('secretKey').value.trim(),
+      type: document.getElementById('contentType').value.trim(),
+      content: document.getElementById('contentBody').value
+    };
+
+    try {
+      // ---- Replace with your real endpoint ----
+      const resp = await fetch('/slot_content/'+slotId, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok) throw new Error(`Server responded ${resp.status}`);
+
+      const result = await resp.json(); // optional, depends on API
+      showAlert('Content successfully sent!', 'success');
+      setContentModal.hide();
+    } catch (err) {
+      console.error(err);
+      showAlert(`Failed to send content: ${err.message}`);
+    }
+  });
+</script>
+
+</body>
+</html>
