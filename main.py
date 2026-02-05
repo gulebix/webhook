@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from .datastore import RedisKeyVal
+from datastore import RedisKeyVal
 import datetime
 import asyncio
 import os
